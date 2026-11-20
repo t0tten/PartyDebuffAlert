@@ -1,0 +1,13 @@
+## Interface: 16001
+## Title: PartyDebuffAlert
+## Notes: Alerts you when party members have debuffs you can dispel
+## Author: Kiro
+## Version: 1.0.0
+## SavedVariables: PartyDebuffAlertDB
+
+PartyDebuffAlert.lua
+PartyDebuffAlert_Config.lua
+PartyDebuffAlert_UI.lua
+PartyDebuffAlert_EditMode.lua
+PartyDebuffAlert_MinimapButton.lua
+PartyDebuffAlert_PartyArrows.lua
