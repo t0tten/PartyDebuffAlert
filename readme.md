@@ -1,71 +1,40 @@
 # PartyDebuffAlert
 
 **Language:** Lua  
-**Game:** World of Warcraft (Interface 10.2.x / Retail)
+**Game:** World of Warcraft (WoW Forever 1.6x / Retail compatible)
 
-Alerts you, in real time, when a party member carries a debuff that your class can dispel.
+Alerts you, in real time, when you or a party member carries a debuff that your class can dispel.
 
 ---
 
 ## Features
 
-- Detects **Magic, Curse, Poison and Disease** debuffs on the player and all party members.
+- Detects **Magic, Curse, Poison, and Disease** debuffs on the player (`player`) and all party members (`party1`–`party4`).
 - Only shows alerts for debuff types **your class can actually remove**:
 
   | Class   | Dispels                        |
-  |---------|-------------------------------|
-  | Priest  | Magic, Disease                |
-  | Paladin | Magic, Poison, Disease        |
-  | Druid   | Curse, Poison                 |
-  | Mage    | Curse                         |
-  | Shaman  | Curse, Poison                 |
-  | Monk    | Magic, Poison, Disease        |
-  | Evoker  | Magic, Curse                  |
+  |---------|--------------------------------|
+  | Priest  | Magic, Disease                 |
+  | Paladin | Magic, Poison, Disease         |
+  | Druid   | Curse, Poison                  |
+  | Mage    | Curse                          |
+  | Shaman  | Curse, Poison                  |
+  | Monk    | Magic, Poison, Disease         |
+  | Evoker  | Magic, Curse                   |
 
-- Popup appears **centre-screen** and shows:
+- **Popup Alert** (movable via Edit Mode) shows:
   - Who has the debuff (player name)
-  - What type it is (colour-coded)
+  - What type it is (color-coded)
   - The spell name
-- Multiple alerts queue up and display one at a time.
-- **In-game configuration panel** – open with `/pda`, `/partydebuffalert`, or by clicking the minimap button.
+- **Pulsing Portrait Arrows:** Displays a large, left-pointing, color-coded arrow next to each affected unit's portrait (`PlayerFrame` and `PartyMemberFrame1`–`PartyMemberFrame4`). The arrow pulses in size and blinks gently, staying visible for as long as the debuff remains active.
+- Multiple alerts queue up and display one at a time without spamming repeated alerts for the same active debuff.
+- **In-game configuration panel & Edit Mode** – open with `/pdebuff` (or by clicking the minimap button) to configure debuff tracking, colors, **Preview**, and **Edit Mode** to drag both the popup alert and portrait arrow positions.
 - **Minimap button** – drag it to any position around the minimap; the position is saved between sessions.
 
 ---
 
 ## Installation
 
-1. Copy the `PartyDebuffAlert` folder into:
-   ```
-   World of Warcraft\_retail_\Interface\AddOns\
-   ```
-2. Start or reload WoW (`/reload`).
-3. Enable **PartyDebuffAlert** in the AddOns list on the character-select screen.
-
----
-
-## Configuration
-
-Type `/pda` in-game to open the config panel. Available options:
-
-| Setting                 | Default | Description                              |
-|-------------------------|---------|------------------------------------------|
-| Enable addon            | On      | Master on/off switch                     |
-| Track Magic             | On      | Alert on Magic debuffs                   |
-| Track Curse             | On      | Alert on Curse debuffs                   |
-| Track Poison            | On      | Alert on Poison debuffs                  |
-| Track Disease           | On      | Alert on Disease debuffs                 |
-| Alert display duration  | 4 sec   | How long each popup stays on screen (1–10 s) |
-
-Settings are saved between sessions via `SavedVariables`.
-
----
-
-## File overview
-
-| File                           | Purpose                                   |
-|--------------------------------|-------------------------------------------|
-| `PartyDebuffAlert.toc`              | Addon manifest                            |
-| `PartyDebuffAlert.lua`              | Core logic – event handling, scan loop    |
-| `PartyDebuffAlert_UI.lua`           | Popup frame and alert queue               |
-| `PartyDebuffAlert_Config.lua`       | In-game configuration panel               |
-| `PartyDebuffAlert_MinimapButton.lua`| Draggable minimap button                  |
+1. Copy the `PartyDebuffAlert` folder into your AddOns directory:
+   ```text
+   World of Warcraft\_forever_\Interface\AddOns\
