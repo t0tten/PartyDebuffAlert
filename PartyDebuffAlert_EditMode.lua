@@ -1,11 +1,18 @@
 -- PartyDebuffAlert_EditMode.lua
 -- Language: Lua
--- Shared Edit Mode: lets the player drag the alert popup and the arrow
--- preview to their desired positions. All other UI is hidden while active.
+-- Shared Edit Mode: lets the player drag the alert popup and the party arrow
+-- preview to their desired positions relative to party frames.
 
 local PDA = PartyDebuffAlert
 
-local editActive = false
+local editActive  = false
+local PULSE_SPEED = 7.5
+local BASE_ARROW  = 64
+local SCALE_MIN   = 0.85
+local SCALE_MAX   = 1.35
+local ALPHA_MIN   = 0.35
+local ALPHA_MAX   = 1.00
+local ARROW_ANGLE = math.rad(90) -- points left toward the frame on the left
 
 -- ── Dim overlay ───────────────────────────────────────────────────────────────
 
@@ -53,61 +60,100 @@ end
 -- ── Arrow preview frame ───────────────────────────────────────────────────────
 
 local arrowPreview = CreateFrame("Frame", "PDA_ArrowPreview", UIParent)
-arrowPreview:SetSize(80, 50)
+arrowPreview:SetSize(166, 86)
 arrowPreview:SetFrameStrata("DIALOG")
 arrowPreview:SetFrameLevel(10)
+arrowPreview.animTime = 0
 arrowPreview:Hide()
 
 local apBg = arrowPreview:CreateTexture(nil, "BACKGROUND")
 apBg:SetAllPoints(arrowPreview)
-apBg:SetColorTexture(0.05, 0.05, 0.10, 0.85)
+apBg:SetColorTexture(0.05, 0.05, 0.10, 0.88)
+
+local function ApplyPreviewOrientation(tex)
+    if not tex then return end
+    if tex.SetRotation then
+        tex:SetRotation(ARROW_ANGLE)
+    elseif tex.SetTexCoord then
+        tex:SetTexCoord(0, 1, 1, 0)
+    end
+end
 
 local apTex = arrowPreview:CreateTexture(nil, "ARTWORK")
-apTex:SetSize(16, 24)
-apTex:SetPoint("LEFT", arrowPreview, "LEFT", 8, 0)
+apTex:SetPoint("LEFT", arrowPreview, "LEFT", 10, 0)
+apTex:SetSize(BASE_ARROW, BASE_ARROW)
 apTex:SetTexture("Interface\\Minimap\\ROTATING-MINIMAPARROW")
-if apTex.SetRotation then
-    apTex:SetRotation(math.rad(-90))
-end
+ApplyPreviewOrientation(apTex)
 apTex:SetVertexColor(0.20, 0.60, 1.0)
 
 local apLabel = arrowPreview:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-apLabel:SetPoint("LEFT", apTex, "RIGHT", 6, 0)
-apLabel:SetText("|cffffffffArrow|r")
-
-local apHint = arrowPreview:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-apHint:SetPoint("BOTTOM", arrowPreview, "BOTTOM", 0, 2)
-apHint:SetText("Drag me")
+apLabel:SetPoint("LEFT", apTex, "RIGHT", 10, 0)
+apLabel:SetText("Drag arrow")
 
 local apBorderTop = arrowPreview:CreateTexture(nil, "BORDER")
-apBorderTop:SetColorTexture(0.6, 0.6, 0.6, 0.6)
+apBorderTop:SetColorTexture(1, 0.82, 0, 0.8)
 apBorderTop:SetHeight(1)
 apBorderTop:SetPoint("TOPLEFT",  arrowPreview, "TOPLEFT",  0, 0)
 apBorderTop:SetPoint("TOPRIGHT", arrowPreview, "TOPRIGHT", 0, 0)
 
 local apBorderBot = arrowPreview:CreateTexture(nil, "BORDER")
-apBorderBot:SetColorTexture(0.6, 0.6, 0.6, 0.6)
+apBorderBot:SetColorTexture(1, 0.82, 0, 0.8)
 apBorderBot:SetHeight(1)
 apBorderBot:SetPoint("BOTTOMLEFT",  arrowPreview, "BOTTOMLEFT",  0, 0)
 apBorderBot:SetPoint("BOTTOMRIGHT", arrowPreview, "BOTTOMRIGHT", 0, 0)
 
+local function ApplyPreviewPulse(elapsed)
+    local wave  = 0.5 + 0.5 * math.sin(elapsed * PULSE_SPEED)
+    local scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * wave
+    local alpha = ALPHA_MIN + (ALPHA_MAX - ALPHA_MIN) * wave
+    apTex:SetSize(BASE_ARROW * scale, BASE_ARROW * scale)
+    apTex:SetAlpha(alpha)
+    ApplyPreviewOrientation(apTex)
+end
+
+arrowPreview:SetScript("OnUpdate", function(self, dt)
+    if not self:IsShown() then return end
+    self.animTime = (self.animTime or 0) + (dt or 0)
+    ApplyPreviewPulse(self.animTime)
+end)
+
+arrowPreview:SetScript("OnShow", function(self)
+    self.animTime = 0
+    ApplyPreviewOrientation(apTex)
+    ApplyPreviewPulse(0)
+end)
+
+local function GetReferencePartyFrame()
+    if PartyMemberFrame1 and PartyMemberFrame1:IsShown() then
+        return PartyMemberFrame1
+    end
+    return PlayerFrame or UIParent
+end
+
 local function SaveArrowPos()
-    if not arrowPreview:GetCenter() or not UIParent:GetCenter() then return end
+    local ref = GetReferencePartyFrame()
+    local left = arrowPreview:GetLeft()
+    local _, centerY = arrowPreview:GetCenter()
+    local refRight = ref:GetRight()
+    local _, refCenterY = ref:GetCenter()
+    if not left or not centerY or not refRight or not refCenterY then return end
+
     local db = PartyDebuffAlertDB or PDA.defaults
-    local x, y = arrowPreview:GetCenter()
-    local cx, cy = UIParent:GetCenter()
-    db.arrowPreviewX = math.floor(x - cx + 0.5)
-    db.arrowPreviewY = math.floor(y - cy + 0.5)
-    db.arrowOffsetX = db.arrowPreviewX
-    db.arrowOffsetY = db.arrowPreviewY
+    db.arrowOffsetX = math.floor(left - refRight + 0.5)
+    db.arrowOffsetY = math.floor(centerY - refCenterY + 0.5)
+
+    if PDA_RefreshAllPartyArrows then
+        PDA_RefreshAllPartyArrows()
+    end
 end
 
 local function ApplyArrowPreviewPos()
     local db = PartyDebuffAlertDB or PDA.defaults
-    local x = db.arrowPreviewX or db.arrowOffsetX or 4
-    local y = db.arrowPreviewY or db.arrowOffsetY or 0
+    local ox = db.arrowOffsetX or 4
+    local oy = db.arrowOffsetY or 0
+    local ref = GetReferencePartyFrame()
     arrowPreview:ClearAllPoints()
-    arrowPreview:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    arrowPreview:SetPoint("LEFT", ref, "RIGHT", ox, oy)
 end
 
 -- ── Exit button (always on top during edit mode) ──────────────────────────────
@@ -153,7 +199,7 @@ function PDA_EnterEditMode()
 
     ApplyArrowPreviewPos()
     arrowPreview:SetFrameStrata("DIALOG")
-    arrowPreview:SetFrameLevel(5)
+    arrowPreview:SetFrameLevel(15)
     arrowPreview:Show()
     MakeDraggable(arrowPreview, SaveArrowPos)
 

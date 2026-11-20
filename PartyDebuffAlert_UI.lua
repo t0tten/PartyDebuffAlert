@@ -16,7 +16,7 @@ local function GetTypeColor(debuffType)
     local key = colorKey[debuffType]
     local c   = key and db[key]
     if not c or not c.useColor then return 1, 1, 1 end
-    return c.r, c.g, c.b
+    return c.r or 1, c.g or 1, c.b or 1
 end
 
 local ANIM_POP  = 0.25
@@ -69,6 +69,7 @@ local function ApplyAlertPosition()
 end
 
 local function SaveAlertPosition()
+    if not alertFrame:GetCenter() or not UIParent:GetCenter() then return end
     local db = PartyDebuffAlertDB or PDA.defaults
     local x, y = alertFrame:GetCenter()
     local cx, cy = UIParent:GetCenter()
@@ -76,7 +77,6 @@ local function SaveAlertPosition()
     db.alertY = math.floor(y - cy + 0.5)
 end
 
--- Apply saved position once DB is ready (called from Config after ADDON_LOADED)
 function PDA_ApplyAlertPosition()
     ApplyAlertPosition()
 end
@@ -85,8 +85,6 @@ end
 
 local moveMode = false
 
--- Overlay shown only during move-mode so the user sees the frame even when
--- no alert is active
 local moveOverlay = alertFrame:CreateTexture(nil, "HIGHLIGHT")
 moveOverlay:SetAllPoints(alertFrame)
 moveOverlay:SetColorTexture(1, 1, 1, 0.08)
@@ -107,13 +105,12 @@ function PDA_EnterMoveMode()
         self:StopMovingOrSizing()
         SaveAlertPosition()
     end)
-    -- Show the frame semi-transparently so the user can see where it is
     alertFrame:SetSize(BASE_W, BASE_H)
     typeLabel:SetText("ALERT POSITION")
     typeLabel:SetTextColor(1, 0.82, 0)
     mainLine:SetText("Drag this box to reposition")
     mainLine:SetTextColor(1, 1, 1)
-    spellLine:SetText("Click 'Done' in config when finished")
+    spellLine:SetText("Click 'Save Positions' when finished")
     spellLine:SetTextColor(0.7, 0.7, 0.7)
     topBorder:SetColorTexture(1, 0.82, 0, 1)
     alertFrame:SetAlpha(0.75)
@@ -141,6 +138,7 @@ local animElapsed = 0
 local holdFor     = 4
 local alertQueue  = {}
 local isShowing   = false
+local isTestArrow = false
 
 local function ApplyColors(r, g, b)
     typeLabel:SetTextColor(r, g, b)
@@ -155,6 +153,10 @@ local function ShowNextAlert()
         isShowing = false
         animState = "idle"
         alertFrame:Hide()
+        if isTestArrow and PDA_UpdatePartyArrow then
+            isTestArrow = false
+            PDA_UpdatePartyArrow("player", nil, false)
+        end
         return
     end
 
@@ -238,5 +240,11 @@ function PDA_TestAlert(debuffType)
     alertFrame:SetSize(BASE_W, BASE_H)
     alertFrame:SetAlpha(0)
     while #alertQueue > 0 do table.remove(alertQueue) end
+
+    if PDA_TestPartyArrow then
+        isTestArrow = true
+        PDA_TestPartyArrow(debuffType)
+    end
+
     PDA_ShowAlert("Testplayer", debuffType, "Test - " .. debuffType .. " Debuff")
 end

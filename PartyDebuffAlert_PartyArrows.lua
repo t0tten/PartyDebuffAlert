@@ -1,24 +1,33 @@
 -- PartyDebuffAlert_PartyArrows.lua
 -- Language: Lua
--- Shows a coloured arrow to the right of the party frame for members with
--- a dispellable debuff. One arrow per unit, re-coloured per debuff type.
+-- Shows a large, coloured, pulsing and gently blinking left-pointing arrow
+-- next to each unit frame (player + party1..4) that has a tracked debuff.
+-- Stays visible until the tracked debuff expires or is dispelled.
 
 local PDA = PartyDebuffAlert
 
--- Maps party unit token -> the arrow frame for that slot
+-- One arrow frame per unit token ("player", "party1", "party2", "party3", "party4")
 local arrows = {}
 
--- Arrow size
-local ARROW_W = 16
-local ARROW_H = 24
+-- Extra-large base size so it stands out immediately in combat
+local BASE_W = 64
+local BASE_H = 64
 
--- The party frame names used by the default Blizzard UI
+-- Noticeable size pulse + clear blink, pointing left toward the unit portrait
+local PULSE_SPEED = 7.5
+local SCALE_MIN   = 0.85
+local SCALE_MAX   = 1.35
+local ALPHA_MIN   = 0.35
+local ALPHA_MAX   = 1.00
+local ARROW_ANGLE = math.rad(90) -- points left toward the frame on the left
+
+-- Standard Blizzard unit frames
 local unitFrameNames = {
-    player   = "PlayerFrame",
-    party1   = "PartyMemberFrame1",
-    party2   = "PartyMemberFrame2",
-    party3   = "PartyMemberFrame3",
-    party4   = "PartyMemberFrame4",
+    player = "PlayerFrame",
+    party1 = "PartyMemberFrame1",
+    party2 = "PartyMemberFrame2",
+    party3 = "PartyMemberFrame3",
+    party4 = "PartyMemberFrame4",
 }
 
 local colorKey = {
@@ -33,69 +42,98 @@ local function GetTypeColor(debuffType)
     local key = colorKey[debuffType]
     local c   = key and db[key]
     if not c or not c.useColor then return 1, 1, 1 end
-    return c.r, c.g, c.b
+    return c.r or 1, c.g or 1, c.b or 1
 end
 
--- Build a right-pointing arrow texture from two triangles using Line primitives.
--- We draw it as a simple ► shape using a plain texture rotated, since WoW
--- does not have a built-in arrow. We use a TextureCoord trick on WHITE8X8
--- to get a solid block, then mask it into a triangle shape by overlaying
--- a rotated texture. For maximum compat we simply use the game's own
--- directional arrow texture.
+local function ApplyArrowOrientation(tex)
+    if not tex then return end
+    if tex.SetRotation then
+        tex:SetRotation(ARROW_ANGLE)
+    elseif tex.SetTexCoord then
+        tex:SetTexCoord(0, 1, 1, 0)
+    end
+end
+
+local function ApplyPulseState(frame, elapsed)
+    local wave  = 0.5 + 0.5 * math.sin(elapsed * PULSE_SPEED)
+    local scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * wave
+    local alpha = ALPHA_MIN + (ALPHA_MAX - ALPHA_MIN) * wave
+
+    if frame.tex then
+        frame.tex:SetSize(BASE_W * scale, BASE_H * scale)
+        frame.tex:SetAlpha(alpha)
+        ApplyArrowOrientation(frame.tex)
+    end
+end
+
 local function CreateArrow(parent)
     local f = CreateFrame("Frame", nil, parent)
-    f:SetSize(ARROW_W, ARROW_H)
+    f:SetSize(BASE_W, BASE_H)
     f:SetFrameStrata("HIGH")
-    f:SetFrameLevel(10)
+    f:SetFrameLevel(20)
+    f.animTime = 0
 
-    -- Use the raid target / UI arrow texture that exists in all clients
     local tex = f:CreateTexture(nil, "ARTWORK")
-    tex:SetAllPoints(f)
-    -- Interface\Minimap\ROTATING-MINIMAPARROW is a directional arrow present
-    -- in every WoW client. We rotate it 90° to point right.
+    tex:SetPoint("CENTER", f, "CENTER", 0, 0)
+    tex:SetSize(BASE_W, BASE_H)
     tex:SetTexture("Interface\\Minimap\\ROTATING-MINIMAPARROW")
-    tex:SetRotation(math.rad(-90))  -- default points up; rotate to point right
+    ApplyArrowOrientation(tex)
 
     f.tex = tex
+
+    f:SetScript("OnUpdate", function(self, dt)
+        if not self:IsShown() then return end
+        self.animTime = (self.animTime or 0) + (dt or 0)
+        ApplyPulseState(self, self.animTime)
+    end)
+
+    f:SetScript("OnShow", function(self)
+        self.animTime = 0
+        ApplyPulseState(self, 0)
+    end)
+
     f:Hide()
     return f
 end
 
+local function GetAnchorFrame(unit)
+    local frameName = unitFrameNames[unit]
+    if frameName and _G[frameName] then
+        return _G[frameName]
+    end
+    return nil
+end
+
 local function GetOrCreateArrow(unit)
     if arrows[unit] then return arrows[unit] end
-
-    local frameName = unitFrameNames[unit]
-    local parent    = frameName and _G[frameName]
-    if not parent then
-        -- Frame doesn't exist yet; use UIParent and position manually later
-        parent = UIParent
-    end
-
-    local arrow = CreateArrow(parent)
+    local anchor = GetAnchorFrame(unit)
+    local arrow = CreateArrow(anchor or UIParent)
     arrows[unit] = arrow
     return arrow
 end
 
 local function PositionArrow(arrow, unit)
-    local frameName = unitFrameNames[unit]
-    local anchor    = frameName and _G[frameName]
+    local anchor = GetAnchorFrame(unit)
     if not anchor then
         arrow:Hide()
-        return
+        return false
     end
-    local ox, oy = PDA_GetArrowOffset()
+    local ox, oy = 4, 0
+    if PDA_GetArrowOffset then
+        ox, oy = PDA_GetArrowOffset()
+    end
+    arrow:SetParent(anchor)
     arrow:ClearAllPoints()
     arrow:SetPoint("LEFT", anchor, "RIGHT", ox, oy)
+    return true
 end
 
 -- ── Public API ────────────────────────────────────────────────────────────────
 
--- Called from core when a debuff is detected or cleared on a unit.
--- debuffType is the type string (or nil when clearing), show is true/false.
 function PDA_UpdatePartyArrow(unit, debuffType, show)
+    if not unit then return end
     local db = PartyDebuffAlertDB or PDA.defaults
     if not db.showPartyArrows then
-        -- Setting off – ensure arrow is hidden and bail
         local existing = arrows[unit]
         if existing then existing:Hide() end
         return
@@ -108,15 +146,17 @@ function PDA_UpdatePartyArrow(unit, debuffType, show)
         return
     end
 
-    PositionArrow(arrow, unit)
+    if not PositionArrow(arrow, unit) then
+        return
+    end
 
     local r, g, b = GetTypeColor(debuffType)
     arrow.tex:SetVertexColor(r, g, b)
+    ApplyArrowOrientation(arrow.tex)
     arrow:Show()
 end
 
--- Reposition all visible arrows (called after UI reload / party roster change)
-local function RefreshAllArrows()
+function PDA_RefreshAllPartyArrows()
     for unit, arrow in pairs(arrows) do
         if arrow:IsShown() then
             PositionArrow(arrow, unit)
@@ -124,17 +164,12 @@ local function RefreshAllArrows()
     end
 end
 
--- Hide all arrows (e.g. when debuffs are wiped on group change)
 function PDA_HideAllPartyArrows()
     for _, arrow in pairs(arrows) do
         arrow:Hide()
     end
 end
 
--- Hook GROUP_ROSTER_UPDATE to reposition arrows when frames move
-local arrowFrame = CreateFrame("Frame")
-arrowFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-arrowFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-arrowFrame:SetScript("OnEvent", function()
-    PDA_HideAllPartyArrows()
-end)
+function PDA_TestPartyArrow(debuffType)
+    PDA_UpdatePartyArrow("player", debuffType, true)
+end
