@@ -1,12 +1,10 @@
 -- PartyDebuffAlert_MinimapButton.lua
 -- Language: Lua
--- Minimap button that exactly mirrors how LibDBIcon-1.0 (used by Atlas) builds its buttons.
+-- Minimap button that mirrors how LibDBIcon-1.0 builds its buttons.
 
 local PDA = PartyDebuffAlert
 
 local DEFAULT_ANGLE = 225
-
--- ── Position (copied verbatim from LibDBIcon updatePosition) ──────────────────
 
 local minimapShapes = {
     ["ROUND"]                 = {true,  true,  true,  true },
@@ -25,7 +23,7 @@ local minimapShapes = {
     ["TRICORNER-BOTTOMRIGHT"] = {true,  true,  true,  false},
 }
 
-local RADIUS = 5  -- same lib.radius default as LibDBIcon
+local RADIUS = 5
 
 local function updatePosition(button, position)
     local angle = math.rad(position or DEFAULT_ANGLE)
@@ -34,7 +32,7 @@ local function updatePosition(button, position)
     if x < 0 then q = q + 1 end
     if y > 0 then q = q + 2 end
     local minimapShape = (GetMinimapShape and GetMinimapShape()) or "ROUND"
-    local quadTable    = minimapShapes[minimapShape]
+    local quadTable    = minimapShapes[minimapShape] or minimapShapes["ROUND"]
     local w = (Minimap:GetWidth()  / 2) + RADIUS
     local h = (Minimap:GetHeight() / 2) + RADIUS
     if quadTable[q] then
@@ -45,6 +43,7 @@ local function updatePosition(button, position)
         x = math.max(-w, math.min(x * diagW, w))
         y = math.max(-h, math.min(y * diagH, h))
     end
+    button:ClearAllPoints()
     button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
@@ -61,8 +60,6 @@ local function LoadAngle()
     return DEFAULT_ANGLE
 end
 
--- ── Button (parented to Minimap, exactly like LibDBIcon) ──────────────────────
-
 local btn = CreateFrame("Button", "PDA_MinimapButton", Minimap)
 btn:SetSize(31, 31)
 btn:SetFrameStrata("MEDIUM")
@@ -71,27 +68,21 @@ btn:RegisterForClicks("anyUp")
 btn:RegisterForDrag("LeftButton")
 btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
--- Background: 20x20, offset TOPLEFT 7,-5  (LibDBIcon ResetButtonBackground)
 local bg = btn:CreateTexture(nil, "BACKGROUND")
 bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
 bg:SetSize(20, 20)
 bg:SetPoint("TOPLEFT", btn, "TOPLEFT", 7, -5)
 
--- Icon: 17x17, offset TOPLEFT 7,-6  (LibDBIcon ResetButtonIcon)
 local icon = btn:CreateTexture(nil, "ARTWORK")
 icon:SetTexture("Interface\\Icons\\Spell_Nature_RemoveCurse")
 icon:SetSize(17, 17)
 icon:SetPoint("TOPLEFT", btn, "TOPLEFT", 7, -6)
--- 5% inset on each side, same as LibDBIcon updateCoord default
 icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
 
--- Border: 53x53, offset TOPLEFT 0,0  (LibDBIcon ResetButtonBorder)
 local border = btn:CreateTexture(nil, "OVERLAY")
 border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 border:SetSize(53, 53)
 border:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
-
--- ── Tooltip ───────────────────────────────────────────────────────────────────
 
 btn:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
@@ -106,10 +97,12 @@ btn:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- ── Click ─────────────────────────────────────────────────────────────────────
-
 btn:SetScript("OnClick", function(self, mouseButton)
     if mouseButton == "LeftButton" then
+        if not PDA_ConfigFrame and PDA_BuildConfigUI then
+            PDA_BuildConfigUI()
+        end
+        if not PDA_ConfigFrame then return end
         if PDA_ConfigFrame:IsShown() then
             PDA_ConfigFrame:Hide()
         else
@@ -117,8 +110,6 @@ btn:SetScript("OnClick", function(self, mouseButton)
         end
     end
 end)
-
--- ── Drag ──────────────────────────────────────────────────────────────────────
 
 btn:SetScript("OnDragStart", function(self)
     self:LockHighlight()
@@ -137,8 +128,6 @@ btn:SetScript("OnDragStop", function(self)
     self:UnlockHighlight()
     self:SetScript("OnUpdate", nil)
 end)
-
--- ── Init (wait for PLAYER_LOGIN like LibDBIcon does) ─────────────────────────
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")

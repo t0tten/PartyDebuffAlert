@@ -13,6 +13,16 @@ local function DeepCopy(orig)
 end
 PDA.DeepCopy = DeepCopy
 
+local function ClearTable(tbl)
+    if wipe then
+        wipe(tbl)
+    else
+        for k in pairs(tbl) do
+            tbl[k] = nil
+        end
+    end
+end
+
 PDA.defaults = {
     enabled         = true,
     trackMagic      = true,
@@ -45,6 +55,16 @@ PDA.classDispels = {
 
 PDA.activeAlerts = {}
 local wasInGroup = false
+
+local function IsInAnyGroup()
+    if IsInGroup then
+        return IsInGroup()
+    end
+    if GetNumPartyMembers then
+        return GetNumPartyMembers() > 0
+    end
+    return false
+end
 
 local function PrintClassMessage()
     local _, playerClass = UnitClass("player")
@@ -85,6 +105,23 @@ local function IsTrackedType(debuffType)
     return false
 end
 
+local function GetUnitDebuff(unit, index)
+    if UnitDebuff then
+        return UnitDebuff(unit, index)
+    end
+    if UnitAura then
+        return UnitAura(unit, index, "HARMFUL")
+    end
+    if C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex then
+        local data = C_UnitAuras.GetDebuffDataByIndex(unit, index)
+        if not data then return nil end
+        return data.name, data.icon, data.applications, data.dispelName,
+               data.duration, data.expirationTime, data.sourceUnit,
+               data.isStealable, data.nameplateShowPersonal, data.spellId
+    end
+    return nil
+end
+
 local function ScanUnit(unit)
     if not UnitExists(unit) or UnitIsDead(unit) then return end
     local dispelTypes = GetPlayerDispelTypes()
@@ -94,7 +131,7 @@ local function ScanUnit(unit)
     local unitName = UnitName(unit) or unit
 
     for i = 1, 40 do
-        local name, _, _, debuffType, _, _, _, _, _, spellId = UnitDebuff(unit, i)
+        local name, _, _, debuffType, _, _, _, _, _, spellId = GetUnitDebuff(unit, i)
         if not name then break end
         if debuffType and debuffType ~= "" then
             local dtype = debuffType:sub(1,1):upper() .. debuffType:sub(2):lower()
@@ -102,8 +139,8 @@ local function ScanUnit(unit)
                 local alertKey = unit .. "_" .. (spellId or name)
                 if not PDA.activeAlerts[alertKey] then
                     PDA.activeAlerts[alertKey] = true
-                    PDA_ShowAlert(unitName, dtype, name)
-                    PDA_UpdatePartyArrow(unit, dtype, true)
+                    if PDA_ShowAlert then PDA_ShowAlert(unitName, dtype, name) end
+                    if PDA_UpdatePartyArrow then PDA_UpdatePartyArrow(unit, dtype, true) end
                 end
             end
         end
@@ -111,12 +148,16 @@ local function ScanUnit(unit)
 end
 
 local function ClearExpiredAlerts(unit)
+    local exists = UnitExists(unit) and not UnitIsDead(unit)
     local stillPresent = {}
-    for i = 1, 40 do
-        local name, _, _, _, _, _, _, _, _, spellId = UnitDebuff(unit, i)
-        if not name then break end
-        stillPresent[unit .. "_" .. (spellId or name)] = true
+    if exists then
+        for i = 1, 40 do
+            local name, _, _, _, _, _, _, _, _, spellId = GetUnitDebuff(unit, i)
+            if not name then break end
+            stillPresent[unit .. "_" .. (spellId or name)] = true
+        end
     end
+
     local anyCleared = false
     for key in pairs(PDA.activeAlerts) do
         if key:find("^" .. unit .. "_") and not stillPresent[key] then
@@ -124,21 +165,41 @@ local function ClearExpiredAlerts(unit)
             anyCleared = true
         end
     end
-    if anyCleared then
-        PDA_UpdatePartyArrow(unit, nil, false)
+
+    if anyCleared and PDA_UpdatePartyArrow then
+        local remainingType = nil
+        if exists then
+            local dispelTypes = GetPlayerDispelTypes()
+            for i = 1, 40 do
+                local name, _, _, debuffType = GetUnitDebuff(unit, i)
+                if not name then break end
+                if debuffType and debuffType ~= "" then
+                    local dtype = debuffType:sub(1,1):upper() .. debuffType:sub(2):lower()
+                    if dispelTypes and dispelTypes[dtype] and IsTrackedType(dtype) then
+                        remainingType = dtype
+                        break
+                    end
+                end
+            end
+        end
+        if remainingType then
+            PDA_UpdatePartyArrow(unit, remainingType, true)
+        else
+            PDA_UpdatePartyArrow(unit, nil, false)
+        end
     end
 end
 
 local function ScanAll()
-    ScanUnit("player")
-    for i = 1, 4 do
-        local unit = "party" .. i
-        if UnitExists(unit) then
+    pcall(function()
+        ScanUnit("player")
+        ClearExpiredAlerts("player")
+        for i = 1, 4 do
+            local unit = "party" .. i
             ScanUnit(unit)
             ClearExpiredAlerts(unit)
         end
-    end
-    ClearExpiredAlerts("player")
+    end)
 end
 
 -- ── Event frame ───────────────────────────────────────────────────────────────
@@ -151,7 +212,6 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
-
     if event == "ADDON_LOADED" then
         if arg1 ~= "PartyDebuffAlert" then return end
         if not PartyDebuffAlertDB then
@@ -163,7 +223,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             end
         end
-        PDA_BuildConfigUI()
+        if PDA_BuildConfigUI then
+            PDA_BuildConfigUI()
+        end
 
     elseif event == "UNIT_AURA" then
         if arg1 == "player" or (arg1 and arg1:find("^party%d$")) then
@@ -171,26 +233,30 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         end
 
     elseif event == "GROUP_ROSTER_UPDATE" then
-        wipe(PDA.activeAlerts)
+        ClearTable(PDA.activeAlerts)
         ScanAll()
-        local inGroup = IsInGroup()
+        local inGroup = IsInAnyGroup()
         if inGroup and not wasInGroup then
             PrintClassMessage()
         end
         wasInGroup = inGroup
 
     elseif event == "PLAYER_ENTERING_WORLD" then
-        wipe(PDA.activeAlerts)
+        ClearTable(PDA.activeAlerts)
         ScanAll()
 
     elseif event == "PLAYER_LOGIN" then
         PrintClassMessage()
-
+    end
 end)
 
 SLASH_PARTYDEBUFFALERT1 = "/pdebuff"
 SLASH_PARTYDEBUFFALERT2 = "/partydebuff"
 SlashCmdList["PARTYDEBUFFALERT"] = function()
+    if not PDA_ConfigFrame and PDA_BuildConfigUI then
+        PDA_BuildConfigUI()
+    end
+    if not PDA_ConfigFrame then return end
     if PDA_ConfigFrame:IsShown() then
         PDA_ConfigFrame:Hide()
     else
